@@ -35,6 +35,38 @@ typography:
     cn_y_ratio: 0.885                      # 参考片字幕带 85–95%
     stroke_px: 0                           # 黑底上不需要描边
 
+# ── 声音：定稿链（自然优先，追求的是"不像 TTS"而不是"像某支参考片"）────────
+# 实测定稿：带限到 9kHz 是提升自然度最大的一步（去电子嘶声）；
+# 不做声纹匹配——精确匹配参考片需要 +10dB 窄带提升 + −18dB 高切，声音会"电话化"。
+voice:
+  engine: "doubao"
+  voice_id: "zh_male_ruyayichen_saturn_bigtts"    # 商用授权
+  speech_rate_by_beat: {emotional: 10, informational: 24, default: 18}
+  post_chain:
+    - "highpass=f=70"                             # TTS 自带 3-5% 次声隆隆
+    - "lowpass=f=9000"                            # ★ 去电子嘶声，自然度提升最大
+    - "equalizer=f=250:t=q:w=1.0:g=1.5"           # 胸腔厚度
+    - "equalizer=f=3200:t=q:w=1.0:g=2"            # 存在感
+    - "acompressor=threshold=-20dB:ratio=2.2:attack=12:release=140:makeup=1"
+    - "loudnorm=I=-14:TP=-1.5:LRA=10"
+  loudness_trim_db: 1.6                           # 单遍 loudnorm 落点不准，补正
+  limiter: "alimiter=limit=0.84"
+
+# ── 画面：定稿参数 ─────────────────────────────────────────────────
+visual_lock:
+  canvas: [1080, 1920]
+  fps: 30
+  background: "#070503"
+  stroke_color: "#F0F0F0"
+  keyword_font: "Hanzipen SC"
+  keyword_size: 190
+  keyword_colors: {default: "#F0F0F0", concept: "#7AB0FF", conclusion: "#E8C87A"}
+  caption: {font: "PingFang SC Semibold", size: 50, color: "#E8C87A", y_ratio: 0.906}
+  progress_bar: {x: 60, width: 960, y: 1852, height: 10, track: "#262320", fill: "#E8C87A"}
+  draw_in_frames: 14                              # 每屏入画动画帧数
+  accent_rule: "underline if idx%3==0; ellipse if idx%3==1 (cap 620px); sparkle every 4th"
+  screen_seconds_avg: 2.8
+
 motion:
   transitions: [cut]
   animation_style: "硬切为主；线稿可用描边动画逐笔出现"
