@@ -627,7 +627,7 @@ const SceneRenderer: React.FC<{ cut: Cut; theme: ThemeConfig }> = ({ cut, theme 
         subtitle={cut.heroSubtitle || cut.subtitle}
         accentColor={accent}
         textColor={textColor}
-        subtitleColor={theme.mutedTextColor}
+        subtitleColor={cut.subtitleColor || theme.mutedTextColor}
         scrimBackground={heroScrim(theme)}
       />
     );

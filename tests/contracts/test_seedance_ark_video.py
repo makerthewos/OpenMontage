@@ -76,8 +76,24 @@ class TestContract:
         assert payload["duration"] == 30
         assert payload["generate_audio"] is True
 
+        # 2.5 has no published token table, so it must never be priced as free:
+        # it resolves to ARK_SEEDANCE_2_5_PRICE_CNY_PER_MILLION (or the derived
+        # default of 231.48), and an explicit per-call price always overrides
+        # that so a caller can pin the real console rate.
+        derived_cost = tool.estimate_cost(payload)
+        assert derived_cost is not None and derived_cost > 0
+
+        priced_payload = dict(payload)
+        priced_payload["custom_price_cny_per_million_tokens"] = 100.0
+        explicit_cost = tool.estimate_cost(priced_payload)
+        assert explicit_cost is not None and explicit_cost > 0
+        assert explicit_cost != derived_cost
+
+        # An explicit non-finite price is a caller error, not a free video.
+        bad_payload = dict(payload)
+        bad_payload["custom_price_cny_per_million_tokens"] = float("nan")
         with pytest.raises(ValueError, match="custom_price_cny_per_million_tokens"):
-            tool.estimate_cost(payload)
+            tool.estimate_cost(bad_payload)
 
 
 class TestTaskActions:

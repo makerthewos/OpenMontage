@@ -124,12 +124,23 @@ const calculateMetadata: CalculateMetadataFunction<ExplainerProps> = async ({
   props,
 }) => {
   const cuts = props.cuts || [];
+  // Aspect override: the composition is declared 1920x1080, but a cut-schema
+  // deliverable may target a vertical platform. `metadata.aspect` lets the
+  // caller (edit_decisions.metadata) request 9:16 without patching the
+  // composition per project. Everything else keeps the 16:9 default.
+  const aspect = (props.metadata as { aspect?: string } | undefined)?.aspect;
+  const size =
+    aspect === "9:16"
+      ? { width: 1080, height: 1920 }
+      : aspect === "1:1"
+        ? { width: 1080, height: 1080 }
+        : {};
   if (cuts.length === 0) {
-    return { durationInFrames: 30 * 60 };
+    return { durationInFrames: 30 * 60, ...size };
   }
   const lastEnd = Math.max(...cuts.map((c) => c.out_seconds || 0));
   // Add 1 second padding for final fade
-  return { durationInFrames: Math.ceil((lastEnd + 1) * 30) };
+  return { durationInFrames: Math.ceil((lastEnd + 1) * 30), ...size };
 };
 
 export const Root: React.FC = () => {

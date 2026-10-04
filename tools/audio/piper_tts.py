@@ -22,6 +22,24 @@ from tools.base_tool import (
 )
 
 
+def _default_piper_model() -> str:
+    """Resolve the default Piper voice to a local .onnx path when one exists.
+
+    piper-tts >=1.8 requires ``--model`` to be a path to a downloaded .onnx file
+    and rejects bare voice names such as ``en_US-lessac-medium``. Prefer any
+    matching model under ``~/.piper/models`` so the tool works with zero
+    configuration, and fall back to the historical voice name otherwise.
+    """
+    voice = "en_US-lessac-medium"
+    for candidate in (
+        Path.home() / ".piper" / "models" / f"{voice}.onnx",
+        Path.home() / ".local" / "share" / "piper" / f"{voice}.onnx",
+    ):
+        if candidate.exists():
+            return str(candidate)
+    return voice
+
+
 class PiperTTS(BaseTool):
     name = "piper_tts"
     version = "0.1.0"
@@ -69,7 +87,12 @@ class PiperTTS(BaseTool):
             "text": {"type": "string"},
             "model": {
                 "type": "string",
-                "default": "en_US-lessac-medium",
+                "default": _default_piper_model(),
+                "description": (
+                    "Path to a Piper .onnx voice file, or a voice name available "
+                    "to piper's data directory. Defaults to the first bundled "
+                    "voice found under ~/.piper/models."
+                ),
             },
             "speaker_id": {
                 "type": "integer",
@@ -123,7 +146,7 @@ class PiperTTS(BaseTool):
         proc = subprocess.run(
             [
                 "piper",
-                "--model", inputs.get("model", "en_US-lessac-medium"),
+                "--model", inputs.get("model") or _default_piper_model(),
                 "--speaker", str(inputs.get("speaker_id", 0)),
                 "--length-scale", str(inputs.get("length_scale", 1.0)),
                 "--sentence-silence", str(inputs.get("sentence_silence", 0.3)),
@@ -144,12 +167,12 @@ class PiperTTS(BaseTool):
             success=True,
             data={
                 "provider": self.provider,
-                "model": inputs.get("model", "en_US-lessac-medium"),
+                "model": inputs.get("model") or _default_piper_model(),
                 "speaker_id": inputs.get("speaker_id", 0),
                 "text_length": len(inputs["text"]),
                 "output": str(output_path),
                 "format": "wav",
             },
             artifacts=[str(output_path)],
-            model=inputs.get("model", "en_US-lessac-medium"),
+            model=inputs.get("model") or _default_piper_model(),
         )

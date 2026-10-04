@@ -1,0 +1,4 @@
+interface:
+  display_name: "视频一键生成"
+  short_description: "一次收集需求并调用 OpenMontage 完整生成视频"
+  default_prompt: "使用 $one-click-video-generator 根据这些内容和素材一键生成完整视频。"

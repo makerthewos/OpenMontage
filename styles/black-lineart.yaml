@@ -1,0 +1,69 @@
+identity:
+  name: "Black Line-Art (黑底手绘)"
+  category: blackboard-lineart
+  mood: 直给、有观点、略带犀利
+  pace: fast
+  best_for: "口播观点 / 认知拆解 / 硬核励志（纯黑底 + 白描边 + 手绘线稿 + 大字）"
+
+# 本 playbook 承载颜色与字体层（渲染器会读的那部分，见 F-22）。
+# 真正的识别度在"黑底 + 抠像白描边 + 手绘线稿 + 快节奏大字"，
+# 配方见 docs/04-style-profile-black-lineart.md。
+
+visual_language:
+  color_palette:
+    primary: ["#F0F0F0", "#FFFFFF"]        # 白：主体线条与大字
+    accent: ["#E8C87A", "#D0D0A0"]         # 暖金：字幕与强调
+    background: "#070503"                  # 近纯黑（微暖）
+    surface: "#141210"                     # 卡片/描边底的深灰
+    text: "#F0F0F0"
+    muted: "#8A8A8A"
+  composition: subject centered or left; 大字占上半幅；留白极大（黑即是留白）
+  texture: none — 纯色黑底，不上纸纹/颗粒
+
+typography:
+  headings:
+    font: "Hanzipen SC"                    # 翩翩体：手写感，配手绘线稿
+    weight: 400
+    alternates: ["Weibei SC", "Kaiti SC"]
+  body:
+    font: "PingFang SC"
+    weight: 400
+  captions:
+    cn_font: "PingFang SC Semibold"
+    cn_size: 68
+    cn_color: "#E8C87A"                    # 暖金；部分场景用白
+    cn_y_ratio: 0.885                      # 参考片字幕带 85–95%
+    stroke_px: 0                           # 黑底上不需要描边
+
+motion:
+  transitions: [cut]
+  animation_style: "硬切为主；线稿可用描边动画逐笔出现"
+  pacing_rules:
+    max_scene_hold_seconds: 3.0            # 参考片约 1.7 秒一句
+    transition_duration_seconds: 0.0
+  entrance: "cut"
+  exit: "cut"
+
+audio:
+  voice_style: "口播感、语速偏快、有态度"
+  music_mood: "低调铺底或无音乐"
+  music_volume: 0.10
+
+asset_generation:
+  image_prompt_prefix: "white line art on pure black background, hand-drawn marker style, minimal, "
+  image_negative_prompt: "photo, paper texture, vintage, color photo, clutter, gradient background"
+  consistency_anchors:
+    - "纯黑底 #070503，不要任何纹理"
+    - "白色手绘线条，粗细不均（马克笔感）"
+    - "元素极少，一屏一个概念"
+
+quality_rules:
+  - "亮部只占画面极小面积（黑底风格靠留黑）"
+  - "大字每屏 ≤5 个字"
+  - "字幕单语（中文），不要英文——参考片是单语"
+  - "不要位移/推镜（会造成抖动）"
+
+chart_palette:
+  - "#F0F0F0"
+  - "#E8C87A"
+  - "#8A8A8A"

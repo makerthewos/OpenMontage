@@ -100,6 +100,12 @@ class SeedanceArkVideo(BaseTool):
             "without_video": {"480p": 23.0, "720p": 23.0},
             "with_video": {"480p": 14.0, "720p": 14.0},
         },
+        # Seedance 2.5 is billed at a single token rate across resolutions.
+        # Volcengine does not publish a machine-readable 2.5 token rate, so this
+        # value is DERIVED, not quoted: 720p at the published CNY 5.00/second
+        # divides by 21,600 tokens/second to exactly 231.48/M. Override it with
+        # ARK_SEEDANCE_2_5_PRICE_CNY_PER_MILLION once the console total is known.
+        # See _seedance_25_price_cny_per_million().
     }
     OUTPUT_DIMENSIONS = {
         "480p": {
@@ -396,17 +402,23 @@ class SeedanceArkVideo(BaseTool):
     def estimate_cost_cny(self, inputs: dict[str, Any]) -> float:
         model, variant = self._resolve_model(inputs)
         del model
-        if variant is None or variant == "2.5":
-            rate = self._get_custom_price(inputs, required=True)
-            return round(
-                self.estimate_token_usage(inputs) * rate / 1_000_000,
-                4,
-            )
         resolution = str(inputs.get("resolution", "720p")).lower()
         with_video = bool(
             inputs.get("reference_video_url") or inputs.get("reference_video_urls")
         )
         condition = "with_video" if with_video else "without_video"
+        if variant is None or variant == "2.5":
+            rate = self._get_custom_price(
+                inputs,
+                required=True,
+                variant=variant,
+                resolution=resolution,
+                condition=condition,
+            )
+            return round(
+                self.estimate_token_usage(inputs) * rate / 1_000_000,
+                4,
+            )
         try:
             rate = self.PRICE_CNY_PER_MILLION[variant][condition][resolution]
         except KeyError:
@@ -420,16 +432,52 @@ class SeedanceArkVideo(BaseTool):
         return round(self.estimate_cost_cny(inputs) / cny_per_usd, 4)
 
     @staticmethod
-    def _get_custom_price(inputs: dict[str, Any], *, required: bool) -> float:
+    def _seedance_25_price_cny_per_million() -> float | None:
+        """Seedance 2.5's token rate, from env override or the derived default.
+
+        Volcengine publishes 2.5 in CNY per second, not per million tokens, so
+        the value here is derived from the published 720p rate of CNY 5.00 per
+        second against this tool's own token formula (1280*720*24/1024 = 21,600
+        tokens per second -> 231.48). Override with
+        ARK_SEEDANCE_2_5_PRICE_CNY_PER_MILLION once the real console total is
+        known; that env var always wins.
+        """
+        raw = os.environ.get("ARK_SEEDANCE_2_5_PRICE_CNY_PER_MILLION")
+        if raw is None:
+            return 231.48
         try:
-            raw = inputs["custom_price_cny_per_million_tokens"]
-        except KeyError as exc:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return 231.48
+        if not math.isfinite(value) or value <= 0:
+            return 231.48
+        return value
+
+    @staticmethod
+    def _get_custom_price(
+        inputs: dict[str, Any],
+        *,
+        required: bool,
+        variant: str | None = None,
+        resolution: str = "720p",
+        condition: str = "without_video",
+    ) -> float:
+        raw = inputs.get("custom_price_cny_per_million_tokens")
+        if raw is None:
+            # Only Seedance 2.5 may use the derived rate, and only for the
+            # resolutions the tool can actually emit. A custom Endpoint/Model
+            # (variant is None) is a different model with its own unknown price,
+            # so it stays unpriceable rather than borrowing 2.5's rate. A 2.0
+            # variant with no official tier (Mini has no 1080p) also stays
+            # unpriceable so the caller reports it honestly.
+            if variant == "2.5":
+                return SeedanceArkVideo._seedance_25_price_cny_per_million()
             if not required:
                 return 0.0
             raise ValueError(
                 "pricing is unknown for a custom Ark Endpoint/Model; "
                 "set custom_price_cny_per_million_tokens before a paid create"
-            ) from exc
+            )
         try:
             value = float(raw)
         except (TypeError, ValueError) as exc:
@@ -1403,7 +1451,19 @@ class SeedanceArkVideo(BaseTool):
             or inputs.get("reference_video_urls")
             else "without_video"
         )
-        if variant is None:
+        if variant == "2.5":
+            # 2.5 has no official tier table; mirror estimate_cost_cny so the
+            # post-hoc reconciliation uses the same derived rate as preflight.
+            rate = self._get_custom_price(
+                inputs,
+                required=False,
+                variant=variant,
+                resolution=resolution,
+                condition=condition,
+            )
+            if not rate:
+                return None
+        elif variant is None:
             if "custom_price_cny_per_million_tokens" not in inputs:
                 return None
             rate = self._get_custom_price(inputs, required=False)

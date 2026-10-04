@@ -310,9 +310,12 @@ class RemotionCaptionBurn(BaseTool):
         dest_video = pub_dir / video_filename
         shutil.copy2(input_path, dest_video)
 
-        # Build props JSON
+        # Build props JSON.
+        # staticFile() paths are resolved relative to the Remotion public/ dir,
+        # so the prefix must NOT be included — Remotion throws
+        # "Do not include the public/ prefix when using staticFile()" otherwise.
         props = {
-            "videoSrc": f"public/talking-head/{video_filename}",
+            "videoSrc": f"talking-head/{video_filename}",
             "captions": captions,
             "overlays": overlays or [],
             "wordsPerPage": words_per_page,

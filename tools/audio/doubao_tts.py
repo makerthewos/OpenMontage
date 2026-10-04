@@ -255,8 +255,19 @@ class DoubaoTTS(BaseTool):
         if not audio_url:
             raise RuntimeError("Doubao task completed but did not return data.audio_url")
 
-        audio_response = requests.get(audio_url, timeout=(10, 120))
-        audio_response.raise_for_status()
+        # The audio is served from a Volcengine TOS CDN (*.bytespeech.com). An
+        # ambient HTTP proxy that handles overseas traffic cannot tunnel this
+        # domestic host and the TLS read dies with SSLEOFError. Retry once with
+        # the proxy environment ignored so a China-based machine with a proxy
+        # configured still downloads reliably.
+        try:
+            audio_response = requests.get(audio_url, timeout=(10, 120))
+            audio_response.raise_for_status()
+        except requests.exceptions.RequestException:
+            direct = requests.Session()
+            direct.trust_env = False
+            audio_response = direct.get(audio_url, timeout=(10, 120))
+            audio_response.raise_for_status()
         output_path.write_bytes(audio_response.content)
         metadata_path.write_text(json.dumps(query_data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 

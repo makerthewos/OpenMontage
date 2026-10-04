@@ -896,7 +896,11 @@ class VideoCompose(BaseTool):
         """
 
         staged_by_source: dict[Path, str] = {}
-        media_keys = {"source", "src", "backgroundSrc"}
+        # backgroundImage/backgroundVideo are read by Explainer's SceneRenderer
+        # and resolved with staticFile(), so local paths must be copied into the
+        # render's public dir and rewritten, exactly like cut.source. Without
+        # this they are passed through verbatim and 404 at render time.
+        media_keys = {"source", "src", "backgroundSrc", "backgroundImage", "backgroundVideo"}
 
         def visit(node: Any, parent_key: str | None = None) -> Any:
             if isinstance(node, dict):

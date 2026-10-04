@@ -33,6 +33,7 @@
               "playbook_selection",
               "fallback_decision",
               "budget_tradeoff",
+              "approval_policy",
               "downgrade_approval",
               "music_source",
               "motion_commitment",
