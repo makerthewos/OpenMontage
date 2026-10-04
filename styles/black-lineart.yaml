@@ -52,6 +52,18 @@ voice:
   loudness_trim_db: 1.6                           # 单遍 loudnorm 落点不准，补正
   limiter: "alimiter=limit=0.84"
 
+# ── BGM：程序化生成（零版权风险），配比照参考片实测 ────────────────────
+bgm:
+  source: "procedural"                            # pipeline/music.py，Am-F-C-G 钢琴+铺底
+  # ⚠️ Pixabay 免版权库的路走不通：pixabay_music 工具返回 403
+  speech_to_bgm_db: 10                            # 参考片实测 9.6 / 10.8 / 10.6
+  bgm_gain_db: 4.6
+  ducking:
+    filter: "sidechaincompress=threshold=0.04:ratio=4:attack=25:release=600:makeup=1"
+    note: "说话时自动压低音乐，保证旁白清晰"
+  fade_out_seconds: 2
+  mix_trim_db: -0.6
+
 # ── 画面：定稿参数 ─────────────────────────────────────────────────
 visual_lock:
   canvas: [1080, 1920]
