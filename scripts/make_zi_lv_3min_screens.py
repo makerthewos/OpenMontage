@@ -611,21 +611,26 @@ def assemble(screens: list[dict], total: float, project: Path, timing: dict) -> 
     out = render / "final.mp4"
     silent = project / "work" / "silent.mp4"
     bars = project / "work" / "bars"
+    nar = project / "audio" / "narration.wav"
+    src_rate = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries",
+         "stream=sample_rate", "-of", "csv=p=0", str(nar)],
+        capture_output=True, text=True).stdout.strip() or "48000"
     subprocess.run([
         "ffmpeg", "-v", "error", "-y",
         "-i", str(silent),
         "-framerate", str(FPS), "-i", str(bars / "%05d.png"),
-        "-i", str(project / "audio" / "narration.wav"),
+        "-i", str(nar),
         "-filter_complex",
         f"[0:v][1:v]overlay=0:{BAR_Y - 12}:format=auto[v1];"
         f"[v1]fade=t=in:st=0:d=0.4,fade=t=out:st={total-0.8:.3f}:d=0.8,format=yuv420p[v];"
-        # 人声后处理链（原始 TTS 是"消音室干声"，直接听偏电子味）：
-        # ① 削 200Hz 浑浊 ② 提 3k/5k 存在感 ③ 降调 4% 加厚
-        # ④ 轻压缩压住起伏 ⑤ 统一到 -14 LUFS
-        f"[2:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,"
+        # 人声后处理链。⚠️ 降调必须在**源采样率**上做，且要在任何重采样之前：
+        # asetrate 是"把当前流当作这个采样率播放"，若流已被 aformat 转成 48k，
+        # 再 asetrate=24000*0.96 就会把 48k 当 23k 播 —— 音高与语速同时掉 2.08 倍（实测谱质心 0.45×）。
+        f"[2:a]asetrate={src_rate}*0.96,aresample={src_rate},atempo=1.0417,"
+        f"aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,"
         f"equalizer=f=200:t=q:w=1.5:g=-3,equalizer=f=3000:t=q:w=1.0:g=3,"
         f"equalizer=f=5000:t=q:w=1.5:g=2,"
-        f"asetrate=24000*0.96,aresample=48000,atempo=1.0417,"
         f"acompressor=threshold=-20dB:ratio=2.5:attack=10:release=100,"
         f"loudnorm=I=-14:TP=-1.5:LRA=9[a]",
         "-map", "[v]", "-map", "[a]", "-t", f"{total:.3f}",
