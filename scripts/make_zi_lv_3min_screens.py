@@ -170,6 +170,14 @@ def circle(d, cx, cy, r, seed=0, width=6, fill=WHITE):
     d.line(pts, fill=fill, width=width, joint="curve")
 
 
+def ellipse(d, cx, cy, rx, ry, seed=0, width=5, fill=None):
+    """带抖动的手绘椭圆（贴合文字的圈画用）。"""
+    rng = random.Random(seed)
+    pts = [(cx + (rx + rng.uniform(-2.5, 2.5)) * math.cos(2 * math.pi * i / 40),
+            cy + (ry + rng.uniform(-2.5, 2.5)) * math.sin(2 * math.pi * i / 40)) for i in range(41)]
+    d.line(pts, fill=fill, width=width, joint="curve")
+
+
 def stick(d, x, y, h=150, pose="stand", seed=0, fill=WHITE, width=6):
     hr = h * 0.13
     circle(d, x, y - h + hr, hr, seed, width, fill)
@@ -379,6 +387,64 @@ def motif(d, kind, cx, cy, seed=0):
         seg(d, (cx - 150, cy), (cx + 150, cy), seed, 7)
 
 
+
+# ── 批注：给关键屏加一句手写小注 + 指示线 ──────────────────────────
+# 按**关键词**匹配（不按下标——分屏一改下标就会串屏）
+ANNOTATIONS = {
+    "靠意志力？": "不是懒，是额度",
+    "自我损耗": "意志力是有限资源",
+    "忍一天": "忍一天 = 花一天",
+    "越骂越停": "自责也在扣额度",
+    "门槛": "低到不可能失败",
+    "先穿上鞋": "先做，别想",
+    "设计环境": "环境替你决定",
+    "手机放远": "少一次挣扎",
+    "我是会运动的人": "身份先于行为",
+    "看见在动": "记录 = 看见进步",
+    "允许中断": "断一次不算失败",
+    "挂旧习惯": "挂在已有习惯后",
+    "每周复盘": "每周只留有用的",
+    "习惯变轻": "像刷牙一样",
+    "每天 500 字": "十年十几本",
+    "身份投票": "每件小事 = 一票",
+    "1%": "1% × 365 ≈ 37 倍",
+    "打鸡血": "激情会退，系统不会",
+    "3 分钟": "三分钟就够",
+    "先动起来": "别等动力",
+}
+
+STEP_BEATS = ["method1", "setup", "method2", "method3", "method4", "method5", "method6", "review"]
+
+
+def doodle_sparkle(d, x, y, seed=0, color=GOLD, s=1.0):
+    """手绘小星：三笔交叉。"""
+    for i, (dx, dy) in enumerate(((1, 0), (0.5, 0.5), (0, 1), (-0.5, 0.5))):
+        seg(d, (x - 14 * s * dx, y - 14 * s * dy), (x + 14 * s * dx, y + 14 * s * dy), seed + i, 4, color)
+
+
+def draw_annotation(d, note, direction, cx, cy, seed=0):
+    """在手绘批注：一行小字 + 一条指向线。"""
+    f = ImageFont.truetype(FONT_HAND, 46)
+    w = f.getlength(note)
+    x = cx - w / 2 if direction == "left" else cx - w / 2
+    y = cy
+    # 指向线：从批注末端甩出一条弯钩
+    ax = (x + w + 18) if direction == "right" else (x - 18)
+    poly(d, wobble((ax, y + 10), (ax + (70 if direction == "right" else -70), y - 26), 10, 3, seed), 4, DIM)
+    d.text((cx, y), note, font=f, fill=DIM, anchor="mm")
+
+
+def draw_step_badge(d, step, total, cx, cy, color=GOLD):
+    """方法屏的步骤徽章 + 进度点。"""
+    f = ImageFont.truetype(FONT_PING, 40, index=IDX_SC_SEMIBOLD)
+    d.text((cx, cy), f"第 {step} 步 / {total}", font=f, fill=color, anchor="mm")
+    for i in range(total):
+        x = cx - (total - 1) * 17 + i * 34
+        filled = i < step
+        d.ellipse((x - 7, cy + 42, x + 7, cy + 56), outline=color if filled else TRACK,
+                  width=3, fill=color if filled else None)
+
+
 def fit_font(path, size, text, max_w, index=0):
     f = ImageFont.truetype(path, size, index=index)
     while f.getlength(text) > max_w and size > 40:
@@ -387,7 +453,8 @@ def fit_font(path, size, text, max_w, index=0):
     return f
 
 
-def render_base(idx: int, scr: dict, total: int) -> Image.Image:
+def render_base(idx: int, scr: dict, total: int, progress: float = 1.0) -> Image.Image:
+    """progress: 入画动画进度 0→1（关键词与线稿淡入 + 轻微放大）。"""
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
     f_lab = ImageFont.truetype(FONT_PING, 36, index=IDX_SC_SEMIBOLD)
@@ -397,18 +464,62 @@ def render_base(idx: int, scr: dict, total: int) -> Image.Image:
     key, color, kind = scr["key"], scr["color"], scr["motif"]
     key_y, art_y = (int(H * 0.40), int(H * 0.645)) if scr["layout"] == "key_top" else (int(H * 0.685), int(H * 0.365))
 
+    # 关键词：淡入 + 从 0.94 放大到 1.0
+    kp = min(1.0, progress / 0.6)
     f_key = fit_font(FONT_HAND, 190, key, W - 240)
-    d.text((W // 2, key_y), key, font=f_key, fill=color, anchor="mm")
-    if idx % 3 == 0:
-        seg(d, (W // 2 - 150, key_y + 118), (W // 2 + 150, key_y + 118), idx, 6, color, 3.2)
-    elif idx % 3 == 1:
-        circle(d, W // 2, key_y, max(f_key.getlength(key) / 2 + 26, 90), idx + 5, 5, color)
+    if kp > 0:
+        layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        ImageDraw.Draw(layer).text((W // 2, key_y), key, font=f_key, fill=color + (int(255 * kp),), anchor="mm")
+        if kp < 1:
+            s = 0.94 + 0.06 * kp
+            layer = layer.resize((int(W * s), int(H * s)), Image.LANCZOS)
+            img.paste(layer, ((W - layer.width) // 2, (H - layer.height) // 2), layer)
+        else:
+            img.paste(layer, (0, 0), layer)
+    if kp >= 1:                                   # 装饰线/圈在关键词之后出现
+        kw = f_key.getlength(key)
+        if idx % 3 == 1 and kw <= 620:            # 圈画：椭圆贴合文字，别吞掉线稿
+            ellipse(d, W // 2, key_y, kw / 2 + 36, 104, idx + 5, 5, color)
+        else:                                     # 字太长就退回下划线
+            seg(d, (W // 2 - min(kw / 2 + 20, 380), key_y + 118),
+                (W // 2 + min(kw / 2 + 20, 380), key_y + 118), idx, 6, color, 3.2)
 
-    layer = Image.new("RGBA", (900, 620), (0, 0, 0, 0))
-    motif(ImageDraw.Draw(layer), kind, 450, 310, seed=idx * 17 + 3)
-    layer = layer.resize((int(900 * 1.12), int(620 * 1.12)), Image.LANCZOS)
-    img.paste(layer, (W // 2 - layer.width // 2, art_y - layer.height // 2), layer)
+    # 线稿母题：稍晚入场，同样淡入 + 放大
+    mp = min(1.0, max(0.0, (progress - 0.25) / 0.55))
+    if mp > 0:
+        layer = Image.new("RGBA", (900, 620), (0, 0, 0, 0))
+        motif(ImageDraw.Draw(layer), kind, 450, 310, seed=idx * 17 + 3)
+        layer = layer.resize((int(900 * 1.12), int(620 * 1.12)), Image.LANCZOS)
+        if mp < 1:
+            a = layer.split()[3].point(lambda v: int(v * mp))
+            layer.putalpha(a)
+            s = 0.9 + 0.1 * mp
+            layer = layer.resize((int(layer.width * s), int(layer.height * s)), Image.LANCZOS)
+        img.paste(layer, (W // 2 - layer.width // 2, art_y - layer.height // 2), layer)
 
+    # 批注 / 步骤徽章 / 星点：最后出现
+    late = max(0.0, (progress - 0.6) / 0.4)
+    if late > 0:
+        note = ANNOTATIONS.get(key)
+        if note:
+            tmp = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+            draw_annotation(ImageDraw.Draw(tmp), note, "left", W // 2, int(H * 0.80), seed=idx)
+            tmp.putalpha(tmp.split()[3].point(lambda v: int(v * late)))
+            img.paste(tmp, (0, 0), tmp)
+        if scr["beat"] in STEP_BEATS:
+            step = STEP_BEATS.index(scr["beat"]) + 1
+            badge = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+            draw_step_badge(ImageDraw.Draw(badge), step, len(STEP_BEATS), W // 2, int(H * 0.175))
+            badge.putalpha(badge.split()[3].point(lambda v: int(v * late)))
+            img.paste(badge, (0, 0), badge)
+        if idx % 4 == 2:
+            sp = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+            doodle_sparkle(ImageDraw.Draw(sp), 190, 470, seed=idx)
+            doodle_sparkle(ImageDraw.Draw(sp), W - 200, 1420, seed=idx + 3, s=0.8)
+            sp.putalpha(sp.split()[3].point(lambda v: int(v * late)))
+            img.paste(sp, (0, 0), sp)
+
+    # 底部渐隐 + 字幕 + 进度条轨道（进度条填充由 overlay 负责）
     grad = Image.new("L", (1, 260))
     for i in range(260):
         grad.putpixel((0, i), int(150 * (i / 260) ** 1.6))
@@ -420,42 +531,58 @@ def render_base(idx: int, scr: dict, total: int) -> Image.Image:
     return img
 
 
-def render_frames(screens: list[dict], total: float, project: Path) -> Path:
-    """只出 68 张底图 + 合成静默视频；进度条另出轻量序列（见 render_bar_strips）。
+ANIM_FRAMES = 14          # 每屏入画动画帧数（约 0.47s）
 
-    直接逐帧输出全尺寸 PNG 的话，189s×30fps = 5670 张 1080×1920，
-    既慢又占空间；底图是静止的，没有理由重复渲染。
+
+def render_frames(screens: list[dict], total: float, project: Path) -> Path:
+    """每屏生成 动画段(ANIM_FRAMES 帧) + 静止段，再编码拼接。
+
+    底图静止，只有入画动画需要逐帧；进度条另出轻量序列（见 render_bar_strips）。
     """
     work = project / "work"
     shots = work / "screens"
-    shots.mkdir(parents=True, exist_ok=True)
-    for f in shots.glob("*.png"):
-        f.unlink()
-    for i, s in enumerate(screens):
-        render_base(i, s, len(screens)).save(shots / f"{i:03d}.png")
-
-    # 逐屏编码再 concat —— PNG + duration 的 concat 写法在 ffmpeg 上不稳，
-    # 而"每屏一段 mp4 再拼接"是验证过的路径。
+    anim = work / "anim"
     segs = work / "segs"
-    segs.mkdir(parents=True, exist_ok=True)
-    for f in segs.glob("*.mp4"):
-        f.unlink()
+    for dpath in (shots, anim, segs):
+        dpath.mkdir(parents=True, exist_ok=True)
+        for f in dpath.glob("*.png" if dpath is not anim else "*.png"):
+            f.unlink()
+        for f in dpath.glob("*.mp4"):
+            f.unlink()
+
     seg_files = []
     for i, s in enumerate(screens):
         dur = max(0.2, s["end"] - s["start"])
-        seg = segs / f"{i:03d}.mp4"
+        a_dur = min(ANIM_FRAMES / FPS, dur * 0.5)
+        n_anim = max(2, int(a_dur * FPS))
+
+        final = render_base(i, s, len(screens), progress=1.0)
+        final.save(shots / f"{i:03d}.png")
+
+        adir = anim / f"{i:03d}"
+        adir.mkdir(exist_ok=True)
+        for k in range(n_anim):
+            render_base(i, s, len(screens), progress=(k + 1) / n_anim).save(adir / f"{k:03d}.png")
+
+        seg_a = segs / f"{i:03d}_a.mp4"
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-framerate", str(FPS),
+                        "-i", str(adir / "%03d.png"), "-t", f"{n_anim / FPS:.3f}",
+                        "-c:v", "libx264", "-preset", "veryfast", "-crf", "16",
+                        "-pix_fmt", "yuv420p", str(seg_a)], check=True)
+        hold = max(0.04, dur - n_anim / FPS)
+        seg_b = segs / f"{i:03d}_b.mp4"
         subprocess.run(["ffmpeg", "-v", "error", "-y", "-loop", "1",
-                        "-i", str(shots / f"{i:03d}.png"), "-t", f"{dur:.3f}",
+                        "-i", str(shots / f"{i:03d}.png"), "-t", f"{hold:.3f}",
                         "-r", str(FPS), "-c:v", "libx264", "-preset", "veryfast",
-                        "-crf", "16", "-pix_fmt", "yuv420p", str(seg)], check=True)
-        seg_files.append(seg)
+                        "-crf", "16", "-pix_fmt", "yuv420p", str(seg_b)], check=True)
+        seg_files += [seg_a, seg_b]
 
     lst = work / "concat.txt"
     lst.write_text("\n".join(f"file '{p}'" for p in seg_files) + "\n", encoding="utf-8")
     silent = work / "silent.mp4"
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0",
                     "-i", str(lst), "-c", "copy", "-t", f"{total:.3f}", str(silent)], check=True)
-    print(f"底图 {len(screens)} 张 → 静默视频 {total:.1f}s")
+    print(f"底图 {len(screens)} 张 + 入画动画 {len(screens)*ANIM_FRAMES} 帧 → 静默视频 {total:.1f}s")
     return silent
 
 
@@ -492,7 +619,14 @@ def assemble(screens: list[dict], total: float, project: Path, timing: dict) -> 
         "-filter_complex",
         f"[0:v][1:v]overlay=0:{BAR_Y - 12}:format=auto[v1];"
         f"[v1]fade=t=in:st=0:d=0.4,fade=t=out:st={total-0.8:.3f}:d=0.8,format=yuv420p[v];"
+        # 人声后处理链（原始 TTS 是"消音室干声"，直接听偏电子味）：
+        # ① 削 200Hz 浑浊 ② 提 3k/5k 存在感 ③ 降调 4% 加厚
+        # ④ 轻压缩压住起伏 ⑤ 统一到 -14 LUFS
         f"[2:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,"
+        f"equalizer=f=200:t=q:w=1.5:g=-3,equalizer=f=3000:t=q:w=1.0:g=3,"
+        f"equalizer=f=5000:t=q:w=1.5:g=2,"
+        f"asetrate=24000*0.96,aresample=48000,atempo=1.0417,"
+        f"acompressor=threshold=-20dB:ratio=2.5:attack=10:release=100,"
         f"loudnorm=I=-14:TP=-1.5:LRA=9[a]",
         "-map", "[v]", "-map", "[a]", "-t", f"{total:.3f}",
         "-c:v", "libx264", "-preset", "slow", "-crf", "18",
