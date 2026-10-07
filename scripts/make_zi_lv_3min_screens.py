@@ -445,6 +445,38 @@ def draw_step_badge(d, step, total, cx, cy, color=GOLD):
                   width=3, fill=color if filled else None)
 
 
+def chapters_from_screens(screens: list[dict], total: float) -> list[dict]:
+    """从分屏的 label 推导章节区间（按出现顺序合并同名章节）。"""
+    out = []
+    for s in screens:
+        lab = (s.get("label") or "").strip()
+        if not lab:
+            continue
+        if out and out[-1]["label"] == lab:
+            out[-1]["end"] = s["end"]
+        else:
+            out.append(dict(label=lab, start=s["start"], end=s["end"]))
+    if out:
+        out[-1]["end"] = total
+    return out
+
+
+def draw_chapter_row(d, chapters: list[dict], active: str, total: float):
+    """进度条上方的章节名横排：当前章节高亮，其余压暗；并画分段刻度。"""
+    f = ImageFont.truetype(FONT_PING, 29, index=IDX_SC_SEMIBOLD)
+    for ch in chapters:
+        x0 = BAR_X + BAR_W * (ch["start"] / total)
+        x1 = BAR_X + BAR_W * (ch["end"] / total)
+        cx = (x0 + x1) / 2
+        on = ch["label"] == active
+        d.text((cx, BAR_Y - 34), ch["label"], font=f, anchor="mm",
+               fill=GOLD if on else (104, 100, 94))
+        # 刻度：章节起点一条竖线（首章不画，避免压住轨道起点）
+        if ch is not chapters[0]:
+            d.line((x0, BAR_Y - 14, x0, BAR_Y + BAR_H + 6),
+                   fill=(88, 84, 80) if not on else GOLD, width=2)
+
+
 def fit_font(path, size, text, max_w, index=0):
     f = ImageFont.truetype(path, size, index=index)
     while f.getlength(text) > max_w and size > 40:
@@ -453,7 +485,10 @@ def fit_font(path, size, text, max_w, index=0):
     return f
 
 
-def render_base(idx: int, scr: dict, total: int, progress: float = 1.0) -> Image.Image:
+def render_base(idx: int, scr: dict, total: int, progress: float = 1.0,
+                chapters: list[dict] | None = None,
+                duration: float | None = None) -> Image.Image:
+    """total = 屏数（用于页码）；duration = 片长（用于章节定位）——两者别混用。"""
     """progress: 入画动画进度 0→1（关键词与线稿淡入 + 轻微放大）。"""
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
@@ -461,7 +496,8 @@ def render_base(idx: int, scr: dict, total: int, progress: float = 1.0) -> Image
     d.text((66, 90), scr.get("label", ""), font=f_lab, fill=DIM)
     d.text((W - 66, 90), f"{idx+1:02d}/{total}", font=f_lab, fill=DIM, anchor="ra")
 
-    key, color, kind = scr["key"], scr["color"], scr["motif"]
+    key, kind = scr["key"], scr["motif"]
+    color = tuple(scr["color"])          # JSON 读回时是 list，统一转 tuple
     key_y, art_y = (int(H * 0.40), int(H * 0.645)) if scr["layout"] == "key_top" else (int(H * 0.685), int(H * 0.365))
 
     # 关键词：淡入 + 从 0.94 放大到 1.0
@@ -528,13 +564,17 @@ def render_base(idx: int, scr: dict, total: int, progress: float = 1.0) -> Image
     f_sub = ImageFont.truetype(FONT_PING, SUB_SIZE, index=IDX_SC_SEMIBOLD)
     d.text((W // 2, SUB_Y), scr["cn"], font=f_sub, fill=GOLD, anchor="mm")
     d.rounded_rectangle((BAR_X, BAR_Y, BAR_X + BAR_W, BAR_Y + BAR_H), BAR_H // 2, fill=TRACK)
+    if chapters:
+        d.rounded_rectangle((BAR_X, BAR_Y, BAR_X + BAR_W, BAR_Y + BAR_H), BAR_H // 2, fill=TRACK)
+        draw_chapter_row(d, chapters, scr.get("label", ""), duration or total)
     return img
 
 
 ANIM_FRAMES = 14          # 每屏入画动画帧数（约 0.47s）
 
 
-def render_frames(screens: list[dict], total: float, project: Path) -> Path:
+def render_frames(screens: list[dict], total: float, project: Path,
+                  chapters: list[dict] | None = None) -> Path:
     """每屏生成 动画段(ANIM_FRAMES 帧) + 静止段，再编码拼接。
 
     底图静止，只有入画动画需要逐帧；进度条另出轻量序列（见 render_bar_strips）。
@@ -556,13 +596,15 @@ def render_frames(screens: list[dict], total: float, project: Path) -> Path:
         a_dur = min(ANIM_FRAMES / FPS, dur * 0.5)
         n_anim = max(2, int(a_dur * FPS))
 
-        final = render_base(i, s, len(screens), progress=1.0)
+        final = render_base(i, s, len(screens), progress=1.0, chapters=chapters,
+                            duration=total)
         final.save(shots / f"{i:03d}.png")
 
         adir = anim / f"{i:03d}"
         adir.mkdir(exist_ok=True)
         for k in range(n_anim):
-            render_base(i, s, len(screens), progress=(k + 1) / n_anim).save(adir / f"{k:03d}.png")
+            render_base(i, s, len(screens), progress=(k + 1) / n_anim,
+                        chapters=chapters, duration=total).save(adir / f"{k:03d}.png")
 
         seg_a = segs / f"{i:03d}_a.mp4"
         subprocess.run(["ffmpeg", "-v", "error", "-y", "-framerate", str(FPS),
@@ -586,7 +628,8 @@ def render_frames(screens: list[dict], total: float, project: Path) -> Path:
     return silent
 
 
-def render_bar_strips(total: float, project: Path) -> Path:
+def render_bar_strips(total: float, project: Path,
+                      chapters: list[dict] | None = None) -> Path:
     """进度条只画 1080×20 的小图，overlay 上去即可——避免重渲整帧。"""
     bars = project / "work" / "bars"
     bars.mkdir(parents=True, exist_ok=True)
@@ -600,6 +643,10 @@ def render_bar_strips(total: float, project: Path) -> Path:
         y0 = BAR_Y - (BAR_Y - 6) + 6      # 条带内的纵向偏移：让填充对齐底图轨道
         if w > 0:
             d.rounded_rectangle((BAR_X, 12, BAR_X + w, 12 + BAR_H), BAR_H // 2, fill=GOLD + (255,))
+        # 章节刻度画在填充**之上**，形成分段（否则会被金色填充盖住）
+        for ch in (chapters or [])[1:]:
+            x = BAR_X + BAR_W * (ch["start"] / total)
+            d.line((x, 8, x, 12 + BAR_H + 4), fill=(7, 5, 3, 255), width=3)
         img.save(bars / f"{i:05d}.png")
     print(f"进度条序列 {n} 张")
     return bars

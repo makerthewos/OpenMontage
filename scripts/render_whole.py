@@ -106,9 +106,12 @@ def main() -> int:
         json.dumps(timing, ensure_ascii=False, indent=2), encoding="utf-8")
     json.dump(screens, open(OUT / "artifacts" / "screens.json", "w"), ensure_ascii=False, indent=2)
 
+    chapters = S.chapters_from_screens(screens, dur)
+    print(f"章节 {len(chapters)} 段: " + " / ".join(f"{c['label']}({c['start']:.0f}-{c['end']:.0f}s)"
+                                                    for c in chapters))
     print(f"旁白 {dur:.2f}s → 开始渲染")
-    S.render_frames(screens, dur, OUT)
-    S.render_bar_strips(dur, OUT)
+    S.render_frames(screens, dur, OUT, chapters=chapters)
+    S.render_bar_strips(dur, OUT, chapters=chapters)
     S.assemble(screens, dur, OUT, timing)
     f = OUT / "render" / "final.mp4"
     print(f"完成: {f}  {f.stat().st_size/1e6:.1f} MB")
